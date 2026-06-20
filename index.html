@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>AgriVision AI - Live Detector</title>
+    <link rel="manifest" href="manifest.json">
+
+    <!-- PWA: installazione su smartphone -->
+    <meta name="theme-color" content="#0b1220">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="AgriVision">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <link rel="icon" type="image/png" href="icon-192.png">
+
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            color: #f1f5f9;
+            font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: radial-gradient(120% 80% at 50% 0%, #111c30 0%, #0b1220 55%, #080d17 100%);
+            background-attachment: fixed;
+        }
+        .wrap {
+            width: 100%;
+            max-width: 480px;
+            margin: 0 auto;
+            padding: 14px 16px calc(22px + env(safe-area-inset-bottom));
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        /* Brand bar */
+        .brandbar { display: flex; align-items: center; justify-content: space-between; }
+        .brandbar img { height: 27px; width: auto; display: block; }
+        .pill {
+            display: flex; align-items: center; gap: 7px;
+            background: rgba(34,197,94,0.10);
+            border: 1px solid rgba(34,197,94,0.25);
+            padding: 6px 11px; border-radius: 999px;
+        }
+        .pill-dot { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; animation: pulse 1.6s ease-in-out infinite; }
+        .pill-text { font-size: 11px; font-weight: 700; letter-spacing: 0.8px; color: #22c55e; }
+
+        /* App title */
+        .title { display: flex; align-items: center; gap: 11px; margin-top: -2px; }
+        .mark {
+            width: 38px; height: 38px; border-radius: 11px;
+            background: linear-gradient(145deg,#15233b,#0d1626);
+            border: 1px solid rgba(148,163,184,0.18);
+            display: flex; align-items: center; justify-content: center; flex: none;
+        }
+        .mark-ring { width: 16px; height: 16px; border-radius: 50%; border: 2.5px solid #22c55e; position: relative; }
+        .mark-ring::after { content: ''; position: absolute; inset: 0; margin: auto; width: 4px; height: 4px; border-radius: 50%; background: #22c55e; }
+        .appname { font-size: 16px; font-weight: 700; letter-spacing: -0.3px; line-height: 1.15; }
+        .appname span { color: #22c55e; }
+        .appsub { font-size: 10.5px; color: #64748b; font-weight: 500; letter-spacing: 0.3px; }
+
+        /* Camera viewport */
+        #video-container {
+            position: relative; width: 100%; min-height: 300px;
+            background: #05080f; border-radius: 20px; overflow: hidden;
+            border: 1px solid rgba(148,163,184,0.14);
+            box-shadow: 0 20px 50px -20px rgba(0,0,0,0.8);
+        }
+        video { display: block; width: 100%; height: auto; }
+        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+
+        .vignette { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(80% 80% at 50% 45%, transparent 55%, rgba(0,0,0,0.5) 100%); }
+        .hud { position: absolute; top: 12px; left: 12px; display: flex; gap: 6px; }
+        .chip {
+            font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace; font-size: 10px;
+            background: rgba(8,13,23,0.65); padding: 4px 8px; border-radius: 6px;
+            border: 1px solid rgba(148,163,184,0.12); color: #94a3b8;
+        }
+        .chip.fps { color: #22c55e; border-color: rgba(34,197,94,0.2); }
+        .scanline {
+            position: absolute; left: 0; top: 0; width: 100%; height: 80px; pointer-events: none;
+            background: linear-gradient(180deg, transparent, rgba(34,197,94,0.12));
+            border-bottom: 1.5px solid rgba(34,197,94,0.7);
+            animation: scanline 2.8s ease-in-out infinite;
+        }
+        .paused .scanline, .paused .pill-dot { animation-play-state: paused; }
+
+        /* Results panel */
+        .panel { background: linear-gradient(180deg,#141e30,#101827); border: 1px solid rgba(148,163,184,0.12); border-radius: 16px; padding: 15px 16px; }
+        .panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 13px; }
+        .panel-title { font-size: 11px; font-weight: 700; letter-spacing: 1.2px; color: #64748b; text-transform: uppercase; }
+        .panel-count { font-size: 12px; font-weight: 600; color: #22c55e; }
+        .res-row { display: flex; align-items: center; gap: 12px; margin-bottom: 11px; }
+        .res-row:last-child { margin-bottom: 0; }
+        .res-dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; flex: none; box-shadow: 0 0 8px rgba(34,197,94,0.6); }
+        .res-name { font-size: 14px; font-weight: 600; color: #e2e8f0; width: 96px; flex: none; text-transform: capitalize; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .res-bar { flex: 1; height: 6px; background: rgba(148,163,184,0.14); border-radius: 999px; overflow: hidden; }
+        .res-bar i { display: block; height: 100%; background: linear-gradient(90deg,#16a34a,#22c55e); border-radius: 999px; }
+        .res-pct { font-size: 13px; font-weight: 700; color: #94a3b8; width: 42px; text-align: right; flex: none; font-variant-numeric: tabular-nums; }
+        .res-empty { text-align: center; padding: 14px 0; color: #475569; font-size: 13px; }
+
+        /* Controls */
+        .controls { display: flex; align-items: center; justify-content: center; gap: 34px; padding-top: 2px; }
+        .ctrl { width: 52px; height: 52px; border-radius: 50%; background: #141e30; border: 1px solid rgba(148,163,184,0.18); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+        .ctrl:active { background: #1b2842; }
+        .ctrl-lens { width: 20px; height: 16px; border: 2px solid #94a3b8; border-radius: 5px; position: relative; }
+        .ctrl-lens::after { content: ''; position: absolute; inset: 0; margin: auto; width: 7px; height: 7px; border-radius: 50%; border: 2px solid #94a3b8; }
+        .ctrl-line { width: 18px; height: 2px; border-radius: 2px; background: #94a3b8; }
+        .ctrl-line.short { width: 13px; }
+        .shutter { width: 74px; height: 74px; border-radius: 50%; background: rgba(34,197,94,0.12); border: 4px solid #22c55e; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 0 24px rgba(34,197,94,0.35); -webkit-tap-highlight-color: transparent; }
+        .shutter:active { background: rgba(34,197,94,0.2); }
+        .icon-stop { width: 24px; height: 24px; border-radius: 6px; background: #22c55e; }
+        .icon-play { width: 0; height: 0; border-left: 22px solid #22c55e; border-top: 14px solid transparent; border-bottom: 14px solid transparent; margin-left: 5px; }
+
+        .toast { color: #fca5a5; font-size: 13px; text-align: center; }
+
+        @keyframes scanline { 0% { top: -80px; } 100% { top: 100%; } }
+        @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.35; transform: scale(0.7); } }
+    </style>
+
+    <script src="libs/tf.min.js"></script>
+    <script src="libs/tf-tflite.min.js"></script>
+</head>
+<body>
+    <div class="wrap" id="app">
+
+        <div class="brandbar">
+            <img src="rost-logo.png" alt="ROST Tech-logical Innovation">
+            <div class="pill">
+                <div class="pill-dot" id="statusDot"></div>
+                <span class="pill-text" id="statusText">AVVIO</span>
+            </div>
+        </div>
+
+        <div class="title">
+            <div class="mark"><div class="mark-ring"></div></div>
+            <div>
+                <div class="appname">AgriVision <span>AI</span></div>
+                <div class="appsub">Live Object Detection</div>
+            </div>
+        </div>
+
+        <div id="video-container">
+            <video id="webcam" autoplay playsinline muted></video>
+            <canvas id="canvas"></canvas>
+            <div class="vignette"></div>
+            <div class="hud">
+                <span class="chip">640&times;640</span>
+                <span class="chip fps" id="fps">-- FPS</span>
+            </div>
+            <div class="scanline"></div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-head">
+                <span class="panel-title">Rilevamenti</span>
+                <span class="panel-count" id="count">Avvio...</span>
+            </div>
+            <div id="results">
+                <div class="res-empty">Inizializzazione del modello...</div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <div class="ctrl" id="flipBtn" title="Cambia fotocamera"><div class="ctrl-lens"></div></div>
+            <div class="shutter" id="shutterBtn" title="Avvia / Pausa"><div class="icon-stop" id="shutterIcon"></div></div>
+            <div class="ctrl" id="settingsBtn" title="Impostazioni">
+                <div class="ctrl-line"></div>
+                <div class="ctrl-line short"></div>
+                <div class="ctrl-line"></div>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="script.js?v=40"></script>
+
+    <!-- Registrazione Service Worker: abilita offline + installazione app -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js')
+                    .then(reg => console.log('Service Worker registrato:', reg.scope))
+                    .catch(err => console.warn('Registrazione Service Worker fallita:', err));
+            });
+        }
+    </script>
+</body>
+</html>
